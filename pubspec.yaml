@@ -1,0 +1,7 @@
+name: facebook_api
+version: 0.1.1
+author: Graciliano Monteiro Passos <gracilianomp@gmail.com>
+description: Dart access to Facebook API 
+homepage: https://github.com/UpLibs/facebook_api
+dependencies:
+

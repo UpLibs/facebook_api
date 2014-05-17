@@ -33,6 +33,8 @@ class FacebookAPI {
     script.onLoad.listen( (e) => onSucess() , onError: (e) => onError() , cancelOnError: true) ;
     
     head.children.add(script) ;
+    
+    return true ;
   }
   
   static jsEval(String code) {
@@ -194,6 +196,7 @@ class FacebookAPI {
           'status'    : true,
           'cookie'    : true,
           'xfbml'     : true,
+          'version'   : 'v2.0',
           'oauth'     : true
           ${ authResponse != null ? ", 'authResponse': '$authResponse' " : "" }
           ${ _channelURL != null ? ", 'channelUrl': '$_channelURL' " : "" }
@@ -487,15 +490,29 @@ class FacebookAPI {
   
   ///////////////////////////////////////////////////////////////
   
-  void queryFriends( void functResponse( List<Map<String,String>> friends ) ) {
+  void queryFriends( void functResponse( List<FacebookFriend> friends ) ) {
   
+    /*
     api('/me/friends', (JsObject resp) {
       _processQueryFriends(resp, functResponse) ;
+    }) ;
+    */
+    
+    List<FacebookFriend> friendsList = [] ;
+    
+    api('/me/friends', (JsObject resp) {
+      _processQueryFriends(resp, friendsList, (l) {
+        
+        api('/me/invitable_friends', (JsObject resp) {
+          _processQueryFriends(resp, friendsList, functResponse) ;          
+        });
+        
+      }) ;
     }) ;
     
   }
   
-  void queryOnlineFriends( void functResponse( List<Map<String,String>> friends ) ) {
+  void queryOnlineFriends( void functResponse( List<FacebookFriend> friends ) ) {
     
     String fql = "SELECT uid, name FROM user WHERE " +
         "online_presence IN ('active', 'idle') AND " +
@@ -505,34 +522,109 @@ class FacebookAPI {
 
     
     fqlQuery(fql, (JsObject resp) {
-      _processQueryFriends(resp, functResponse) ;
+      _processQueryFriends(resp, [],functResponse) ;
     });
     
   }
   
-  void _processQueryFriends( JsObject resp , void functResponse( List<Map<String,String>> friends )  ) {
-    List<Map<String,String>> friends = [] ;
+  void _processQueryFriends( JsObject resp , List<FacebookFriend> friendsList, void functResponse( List<FacebookFriend> friends )  ) {
+    if (friendsList == null) friendsList = [] ;
     
     var data = resp['data'] ;
-    num sz = data.length ;
+    
+    num sz = 0 ;
+    
+    if ( data is JsArray ) {
+      JsArray dataJsArray = data ;
+      sz = dataJsArray != null ? dataJsArray.length : 0 ;
+    }
+    else {
+      sz = data != null ? data.length : 0 ;  
+    }
+    
+    
     
     for (int i = 0 ; i < sz ; i++) {
       var user = data[i] ;
       
-      var uid = user['id'] ;
-      if (uid == null) uid = user['uid'] ;
+      var id = user['id'] ;
+      if (id == null) id = user['uid'] ;
+      
+      String uid = null ;
+      String idCode = null ;
+      
+      if (id != null) {
+        String idStr = id.toString() ;
+        if (idStr.length < 50) {
+          uid = idStr ;
+        }
+        else {
+          idCode = idStr ;
+        }
+      }
       
       String name = user['name'] ;
       
-      friends.add( { 'uid': '$uid' , 'name': name } ) ;
+      var picture = user['picture'] ;
+      
+      String pictureURL = null ;
+      if (picture != null) {
+        JsObject picData = picture['data'] ;
+        pictureURL = picData['url'] ; 
+      }
+      
+      FacebookFriend fbFriend = new FacebookFriend(uid, name, pictureURL, idCode) ;
+      
+      if ( !FacebookFriend.containsSameFriend(friendsList, fbFriend) ) {
+        friendsList.add(fbFriend) ;  
+      }
+      
     }
     
-    functResponse(friends) ;
+    functResponse(friendsList) ;
   }
   
 }
 
 //////////////////////////////////////////////////////////
+
+class FacebookFriend {
+  
+  static bool containsSameFriend(List<FacebookFriend> list, FacebookFriend friend) {
+    
+    for (var f in list) {
+      if ( f != null && friend.isSame(f) ) return true ;
+    }
+    
+    return false ;
+  }
+  
+  String _uid ;
+  String _name ;
+  String _pictureURL ;
+  String _invitationCode ;
+  
+  FacebookFriend(this._uid , this._name , this._pictureURL, this._invitationCode) {
+    
+    if (this._pictureURL == null && this._uid != null) {
+      this._pictureURL = FacebookAPI.getPictureURL_fromUserID(uid) ;
+    }
+    
+  }
+  
+  String get uid => _uid ;
+  String get name => _name ;
+  String get pictureURL => _pictureURL ;
+  String get invitationCode => _invitationCode ;
+  
+  bool isSame(FacebookFriend other) {
+    if ( this._uid != null && this._uid == other._uid ) return true ;
+    if ( this._pictureURL != null && this._pictureURL == other._pictureURL ) return true ;
+    if ( this._invitationCode != null && this._invitationCode == other._invitationCode ) return true ;
+    return false ;
+  }
+  
+}
 
 class FacebookLoginStatus {
   JsObject _obj ;
